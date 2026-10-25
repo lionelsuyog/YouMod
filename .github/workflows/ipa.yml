@@ -403,6 +403,13 @@ jobs:
           git clone --quiet --depth=1 https://github.com/oceandrift7/YTLocalQueue.git
           cd YTLocalQueue
           mkdir -p Headers && cp -R "$THEOS/include/YouTubeHeader" Headers/YouTubeHeader
+
+          # The iOS 26.5 SDK declares another -button method returning UIButtonConfiguration*,
+          # so the untyped [act button] call no longer compiles in ObjC++. Cast it explicitly
+          # (the next line already checks isKindOfClass:[UIButton class], so this is safe).
+          perl -pi -e 's/UIButton \*btn = \[act button\];/UIButton *btn = (UIButton *)[act button];/' Tweak.xm
+          grep -q 'UIButton \*btn = (UIButton \*)\[act button\];' Tweak.xm || { echo "::error::YTLocalQueue patch did not apply (upstream source changed?)"; exit 1; }
+
           make clean all DEBUG=0 FINALPACKAGE=1 TARGET=iphone:clang:latest:14.0
           DYLIB=$(find .theos/obj -maxdepth 2 -name YTLocalQueue.dylib ! -path '*/arm64*' | head -n1)
           if [ -z "$DYLIB" ]; then
