@@ -96,6 +96,12 @@ on:
         required: false
         type: boolean
 
+      localqueue:
+        description: "Integrate YTLocalQueue (experimental)"
+        default: false
+        required: false
+        type: boolean
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -111,7 +117,7 @@ jobs:
       - name: Hide Sensitive Inputs
         uses: levibostian/action-hide-sensitive-inputs@v1
         with:
-          exclude_inputs: bundle_id,display_name,youpip,ytuhd,ryd,abconfig,ytweaks,youslider,gonerino,demc,volboost,repo,branch,youquality
+          exclude_inputs: bundle_id,display_name,youpip,ytuhd,ryd,abconfig,ytweaks,youslider,gonerino,demc,volboost,repo,branch,youquality,localqueue
           
       - name: Install MEGA downloader
         if: ${{ startsWith(inputs.ipa_url, 'https://mega.nz/') }}
@@ -390,14 +396,32 @@ jobs:
           cd YouQuality
           make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           mv packages/*.deb ${{ github.workspace }}/youquality.deb
-          
+
+      - name: Build YTLocalQueue
+        if: ${{ inputs.localqueue }}
+        run: |
+          git clone --quiet --depth=1 https://github.com/oceandrift7/YTLocalQueue.git
+          cd YTLocalQueue
+          mkdir -p Headers && cp -R "$THEOS/include/YouTubeHeader" Headers/YouTubeHeader
+          make clean all DEBUG=0 FINALPACKAGE=1 TARGET=iphone:clang:latest:14.0
+          DYLIB=$(find .theos/obj -maxdepth 2 -name YTLocalQueue.dylib ! -path '*/arm64*' | head -n1)
+          if [ -z "$DYLIB" ]; then
+            echo "::error::YTLocalQueue.dylib not found after build"
+            exit 1
+          fi
+          cp "$DYLIB" "$GITHUB_WORKSPACE/YTLocalQueue.dylib"
+          test -s "$GITHUB_WORKSPACE/YTLocalQueue.dylib" || { echo "::error::YTLocalQueue.dylib is empty"; exit 1; }
+
       - name: Inject Tweaks Into IPA
         run: |
           tweaks="OpenYouTubeSafariExtension.appex"
 
-          for f in *.deb; do
+          shopt -s nullglob
+          for f in *.deb *.dylib; do
             tweaks="$tweaks $f"
           done
+
+          echo "Injecting: $tweaks"
           
           cyan -i youtube.ipa -o YouMod_${{ env.YT_VERSION }}_v${{ env.YOUMOD_VERSION }}.ipa -uwef $tweaks -n "${{ inputs.display_name }}" -b ${{ inputs.bundle_id }}
 
